@@ -212,82 +212,16 @@ class NmapProcess(Thread):
             thread_stdout.close()
 
         self._run_init()
-        try:
-            _tmp_cmdline = shlex.split(self.__nmap_command_line)
-            self.__nmap_proc = subprocess.Popen(args=_tmp_cmdline,
-                                                stdout=subprocess.PIPE,
-                                                stderr=subprocess.PIPE,
-                                                bufsize=0)
-            self.__thread_stdout = Thread(target=stream_reader,
-                                          name='stdout-reader',
-                                          args=(self.__nmap_proc.stdout,
-                                                self.__io_queue))
-            self.__thread_stderr = Thread(target=stream_reader,
-                                          name='stderr-reader',
-                                          args=(self.__nmap_proc.stderr,
-                                                self.__ioerr_queue))
-
-            self.__thread_stdout.start()
-            self.__thread_stderr.start()
-
-            self.__state = self.RUNNING
-        except OSError:
-            self.__state = self.FAILED
-            raise
-
-        return self.__wait()
+        _tmp_cmdline = shlex.split(self.__nmap_command_line)
+        import ipdb
+        ipdb.set_trace()
+        self.__stdout = subprocess.check_output(_tmp_cmdline)
+        self.__nmap_rc = 0
+        return 0
 
     def active_fd(self):
         return (self.__thread_stdout.is_alive() or
                 self.__thread_stderr.is_alive())
-
-    def __wait(self):
-        """
-        Private method, called by run() which will loop and
-        process the data from the python queues. Those queues are fed by
-        the stream_readers of run, reading lines from subprocess.stdout/err.
-        Each time data is pushed in the nmap's stdout queue:
-        1. __process_event is called with the acquired data as input
-        2. if a event callback was provided, the function passed in the
-           constructor is called.
-
-        :return: return code from nmap execution
-        """
-        thread_stream = ''
-        while (self.__nmap_proc.poll() is None or
-               self.active_fd() is True or
-               not self.__io_queue.empty() or
-               not self.__ioerr_queue.empty()):
-            if self.__process_killed.isSet():
-                break
-            try:
-                thread_stream = self.__io_queue.get_nowait()
-            except Empty:
-                pass
-            except KeyboardInterrupt:
-                break
-            else:
-                evnt = self.__process_event(thread_stream)
-                if self.__nmap_event_callback and evnt:
-                    self.__nmap_event_callback(self)
-                self.__stdout += thread_stream
-                self.__io_queue.task_done()
-            time.sleep(0.01)
-
-        self.__nmap_rc = self.__nmap_proc.poll()
-        if self.rc is None:
-            self.__state = self.CANCELLED
-        elif self.rc == 0:
-            self.__state = self.DONE
-            self.__progress = 100
-        else:
-            self.__state = self.FAILED
-            try:
-                self.__stderr = self.__ioerr_queue.get(timeout=1)
-                self.__ioerr_queue.task_done()
-            except Empty:
-                pass
-        return self.rc
 
     def run_background(self):
         super(NmapProcess, self).start()
